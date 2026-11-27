@@ -36,7 +36,16 @@ Explorer / claude-here
 
 ## Install
 
-Double-click `installer.cmd`, from **your** account (no administrator rights needed).
+1. Download the zip of the latest version from the
+   [Releases](https://github.com/lhervier/claude-here/releases) page ("Source code (zip)"),
+   or with **Code > Download ZIP** on the repository page.
+2. **Extract the zip** to a folder of your choice. Do not run the installer from inside the zip:
+   Windows would extract `installer.cmd` alone and it would not find its scripts.
+3. Double-click `installer.cmd`, from **your** account (no administrator rights needed).
+
+Windows may warn that the file comes from the Internet: confirm to continue. To avoid the warning,
+right-click the zip > Properties > check **Unblock** before extracting it.
+
 The installer lists the local accounts and asks which one to run Claude under, then:
 
 - copies the launcher (filled-in `claude-here.ps1` and `claude-here.cmd`) to
