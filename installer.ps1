@@ -1,283 +1,283 @@
 ﻿<#
 .SYNOPSIS
-    Installe (ou désinstalle avec -Desinstaller) claude-ici : la commande et l'entrée
-    « Ouvrir Claude ici » du menu contextuel de l'Explorateur.
+    Installs (or uninstalls with -Uninstall) claude-here: the command and the "Open Claude here"
+    entry in the File Explorer context menu.
 
 .DESCRIPTION
-    À lancer depuis TON compte (pas celui de Claude). Pas besoin d'être administrateur.
+    Run it from YOUR account (not the Claude one). No administrator rights needed.
 
-    1. Liste les comptes locaux et demande celui sous lequel lancer Claude.
-    2. Copie claude-ici.ps1, renseigné avec ce compte, dans le dossier d'installation, avec
-       claude-ici.cmd pour pouvoir le lancer depuis cmd.exe.
-    3. Copie claude-session.ps1 dans C:\ProgramData\ClaudeIci, lisible par le compte Claude
-       mais pas modifiable par lui. C'est lui qui vérifie, sous ce compte, que Windows Terminal
-       et Claude Code sont installés.
-    4. Ajoute le dossier d'installation au PATH de ton compte.
-    5. Ajoute l'entrée au menu contextuel (dossiers, fond de dossier, lecteurs).
-       Sous Windows 11, elle est dans « Afficher plus d'options » (ou Maj+clic droit).
+    1. Lists the local accounts and asks which one to run Claude under.
+    2. Copies claude-here.ps1, filled in with that account, to the install folder, along with
+       claude-here.cmd so it can also be run from cmd.exe.
+    3. Copies claude-session.ps1 to C:\ProgramData\ClaudeHere, readable by the Claude account
+       but not modifiable by it. That script checks, under that account, that Windows Terminal
+       and Claude Code are installed.
+    4. Adds the install folder to your account's PATH.
+    5. Adds the context menu entry (folders, folder background, drives).
+       On Windows 11, it is under "Show more options" (or Shift+right-click).
 
-    Relancer l'installeur met à jour une installation existante.
+    Running the installer again updates an existing installation.
 
-.PARAMETER Compte
-    Compte local sous lequel lancer Claude. Demandé s'il est absent.
+.PARAMETER Account
+    Local account to run Claude under. Prompted for if omitted.
 
-.PARAMETER DossierInstallation
-    Dossier où copier claude-ici. Le compte Claude ne doit PAS pouvoir y écrire : sinon il
-    pourrait modifier un script que tu lances sous ton compte.
+.PARAMETER InstallDir
+    Folder to copy claude-here to. The Claude account must NOT be able to write to it: otherwise
+    it could modify a script that you run under your own account.
 
-.PARAMETER Desinstaller
-    Retire tout ce que l'installeur a ajouté.
+.PARAMETER Uninstall
+    Removes everything the installer added.
 #>
 [CmdletBinding(SupportsShouldProcess)]
 param(
-    [string] $Compte,
-    [string] $DossierInstallation = (Join-Path $env:LOCALAPPDATA 'Programs\ClaudeIci'),
-    [switch] $Desinstaller
+    [string] $Account,
+    [string] $InstallDir = (Join-Path $env:LOCALAPPDATA 'Programs\ClaudeHere'),
+    [switch] $Uninstall
 )
 
 $ErrorActionPreference = 'Stop'
 
-$Nom           = 'ClaudeIci'
-$CleInfos      = "HKCU:\Software\$Nom"   # mémorise l'installation pour la désinstallation
-# Dossier (clic sur un dossier), Directory\Background (clic dans le vide), Drive (clic sur un lecteur)
-$ClesMenu      = 'Directory', 'Directory\Background', 'Drive' |
-    ForEach-Object { "HKCU:\Software\Classes\$_\shell\$Nom" }
-$DossierSession = Join-Path $env:ProgramData $Nom
-$Modele        = Join-Path $PSScriptRoot 'claude-ici.ps1'
-$ModeleSession = Join-Path $PSScriptRoot 'claude-session.ps1'
-$MonSid        = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+$Name             = 'ClaudeHere'
+$InfoKey          = "HKCU:\Software\$Name"   # remembers the installation, for updates and uninstall
+# Directory (click on a folder), Directory\Background (click in empty space), Drive (click on a drive)
+$MenuKeys         = 'Directory', 'Directory\Background', 'Drive' |
+    ForEach-Object { "HKCU:\Software\Classes\$_\shell\$Name" }
+$SessionDir       = Join-Path $env:ProgramData $Name
+$LauncherTemplate = Join-Path $PSScriptRoot 'claude-here.ps1'
+$SessionTemplate  = Join-Path $PSScriptRoot 'claude-session.ps1'
+$MySid            = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
 
-function Select-Compte([string] $Defaut) {
-    # Comptes intégrés exclus : Administrateur (500), Invité (501), DefaultAccount (503),
+function Select-Account([string] $Default) {
+    # Built-in accounts excluded: Administrator (500), Guest (501), DefaultAccount (503),
     # WDAGUtilityAccount (504).
-    $comptes = @(Get-LocalUser |
-        Where-Object { $_.Enabled -and $_.SID.Value -notmatch '-(500|501|503|504)$' -and $_.SID.Value -ne $MonSid } |
+    $accounts = @(Get-LocalUser |
+        Where-Object { $_.Enabled -and $_.SID.Value -notmatch '-(500|501|503|504)$' -and $_.SID.Value -ne $MySid } |
         Sort-Object Name)
-    if (-not $comptes) {
-        throw 'Aucun compte local utilisable. Crée d''abord un compte local dédié à Claude.'
+    if (-not $accounts) {
+        throw 'No usable local account. Create a local account dedicated to Claude first.'
     }
 
-    Write-Host 'Comptes locaux :'
-    for ($i = 0; $i -lt $comptes.Count; $i++) {
-        $description = if ($comptes[$i].Description) { "  ($($comptes[$i].Description))" } else { '' }
-        Write-Host ("  {0}. {1}{2}" -f ($i + 1), $comptes[$i].Name, $description)
+    Write-Host 'Local accounts:'
+    for ($i = 0; $i -lt $accounts.Count; $i++) {
+        $description = if ($accounts[$i].Description) { "  ($($accounts[$i].Description))" } else { '' }
+        Write-Host ("  {0}. {1}{2}" -f ($i + 1), $accounts[$i].Name, $description)
     }
 
-    $numeroDefaut = 0
-    for ($i = 0; $i -lt $comptes.Count; $i++) {
-        if ($comptes[$i].Name -eq $Defaut) { $numeroDefaut = $i + 1 }
+    $defaultNumber = 0
+    for ($i = 0; $i -lt $accounts.Count; $i++) {
+        if ($accounts[$i].Name -eq $Default) { $defaultNumber = $i + 1 }
     }
-    if (-not $numeroDefaut -and $comptes.Count -eq 1) { $numeroDefaut = 1 }
+    if (-not $defaultNumber -and $accounts.Count -eq 1) { $defaultNumber = 1 }
 
     while ($true) {
-        $invite = 'Numéro du compte sous lequel lancer Claude'
-        if ($numeroDefaut) { $invite += " [$numeroDefaut]" }
-        $reponse = Read-Host $invite
-        if ([string]::IsNullOrWhiteSpace($reponse) -and $numeroDefaut) { $reponse = "$numeroDefaut" }
-        $numero = 0
-        if ([int]::TryParse($reponse, [ref] $numero) -and $numero -ge 1 -and $numero -le $comptes.Count) {
-            return $comptes[$numero - 1].Name
+        $prompt = 'Number of the account to run Claude under'
+        if ($defaultNumber) { $prompt += " [$defaultNumber]" }
+        $answer = Read-Host $prompt
+        if ([string]::IsNullOrWhiteSpace($answer) -and $defaultNumber) { $answer = "$defaultNumber" }
+        $number = 0
+        if ([int]::TryParse($answer, [ref] $number) -and $number -ge 1 -and $number -le $accounts.Count) {
+            return $accounts[$number - 1].Name
         }
-        Write-Host "Réponds par un numéro entre 1 et $($comptes.Count)." -ForegroundColor Yellow
+        Write-Host "Enter a number between 1 and $($accounts.Count)." -ForegroundColor Yellow
     }
 }
 
-function Test-Administrateur([string] $Sid) {
+function Test-Administrator([string] $Sid) {
     try {
         return [bool] (Get-LocalGroupMember -SID 'S-1-5-32-544' -ErrorAction Stop |
             Where-Object { $_.SID.Value -eq $Sid })
     } catch {
-        return $false   # groupe illisible (membres de domaine non résolus) : on ne bloque pas
+        return $false   # group unreadable (unresolved domain members): do not block
     }
 }
 
 function Test-Windows11 {
-    # ProductName vaut encore « Windows 10 » sous Windows 11 : seul le numéro de build est fiable.
+    # ProductName still says "Windows 10" on Windows 11: only the build number is reliable.
     $build = [int](Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion').CurrentBuildNumber
     return $build -ge 22000
 }
 
-function Send-ChangementEnvironnement {
-    # Prévient l'Explorateur que le PATH a changé : les nouvelles consoles le verront.
-    if (-not ('ClaudeIci.Win32' -as [type])) {
-        Add-Type -Namespace ClaudeIci -Name Win32 -MemberDefinition @'
+function Send-EnvironmentChange {
+    # Tells File Explorer the PATH changed: new consoles will pick it up.
+    if (-not ('ClaudeHere.Win32' -as [type])) {
+        Add-Type -Namespace ClaudeHere -Name Win32 -MemberDefinition @'
 [DllImport("user32.dll", CharSet = CharSet.Unicode)]
 public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, UIntPtr wParam,
     string lParam, uint fuFlags, uint uTimeout, out UIntPtr lpdwResult);
 '@
     }
-    $resultat = [UIntPtr]::Zero
-    [ClaudeIci.Win32]::SendMessageTimeout([IntPtr]0xffff, 0x1A, [UIntPtr]::Zero, 'Environment',
-        2, 5000, [ref] $resultat) | Out-Null
+    $result = [UIntPtr]::Zero
+    [ClaudeHere.Win32]::SendMessageTimeout([IntPtr]0xffff, 0x1A, [UIntPtr]::Zero, 'Environment',
+        2, 5000, [ref] $result) | Out-Null
 }
 
-function Get-PathUtilisateur {
-    # Lecture brute : garde les %VARIABLES% telles quelles (REG_EXPAND_SZ).
-    $cle = Get-Item 'HKCU:\Environment'
-    return [string] $cle.GetValue('Path', '', 'DoNotExpandEnvironmentNames')
+function Get-UserPath {
+    # Raw read: keeps %VARIABLES% as they are (REG_EXPAND_SZ).
+    $key = Get-Item 'HKCU:\Environment'
+    return [string] $key.GetValue('Path', '', 'DoNotExpandEnvironmentNames')
 }
 
-function Set-PathUtilisateur([string[]] $Entrees) {
-    $valeur = ($Entrees | Where-Object { $_ }) -join ';'
-    if ($PSCmdlet.ShouldProcess('PATH utilisateur', "Écrire « $valeur »")) {
-        Set-ItemProperty 'HKCU:\Environment' -Name Path -Value $valeur -Type ExpandString
-        Send-ChangementEnvironnement
+function Set-UserPath([string[]] $Entries) {
+    $value = ($Entries | Where-Object { $_ }) -join ';'
+    if ($PSCmdlet.ShouldProcess('User PATH', "Write '$value'")) {
+        Set-ItemProperty 'HKCU:\Environment' -Name Path -Value $value -Type ExpandString
+        Send-EnvironmentChange
     }
 }
 
-function Test-MemeChemin([string] $A, [string] $B) {
+function Test-SamePath([string] $A, [string] $B) {
     $A = [Environment]::ExpandEnvironmentVariables($A).TrimEnd('\')
     $B = [Environment]::ExpandEnvironmentVariables($B).TrimEnd('\')
     return [string]::Equals($A, $B, [StringComparison]::OrdinalIgnoreCase)
 }
 
-function ConvertTo-LitteralPS([string] $Valeur) {
-    return "'" + $Valeur.Replace("'", "''") + "'"
+function ConvertTo-PSLiteral([string] $Value) {
+    return "'" + $Value.Replace("'", "''") + "'"
 }
 
-function Write-Utf8Bom([string] $Chemin, [string] $Contenu) {
-    # BOM UTF-8 : sans lui, PowerShell 5.1 lit le script en ANSI et casse les accents.
-    [System.IO.File]::WriteAllText($Chemin, $Contenu, [System.Text.UTF8Encoding]::new($true))
+function Write-Utf8Bom([string] $FilePath, [string] $Content) {
+    # UTF-8 BOM: without it, PowerShell 5.1 reads non-ASCII characters as ANSI.
+    [System.IO.File]::WriteAllText($FilePath, $Content, [System.Text.UTF8Encoding]::new($true))
 }
 
 # ---------------------------------------------------------------------------------------------
-# Désinstallation
+# Uninstall
 # ---------------------------------------------------------------------------------------------
-if ($Desinstaller) {
-    $infos = Get-ItemProperty -LiteralPath $CleInfos -ErrorAction SilentlyContinue
-    $dossier = if ($infos) { $infos.DossierInstallation } else { $DossierInstallation }
+if ($Uninstall) {
+    $info = Get-ItemProperty -LiteralPath $InfoKey -ErrorAction SilentlyContinue
+    $dir = if ($info) { $info.InstallDir } else { $InstallDir }
 
-    foreach ($cle in $ClesMenu) {
-        if (Test-Path -LiteralPath $cle) { Remove-Item -LiteralPath $cle -Recurse }
+    foreach ($key in $MenuKeys) {
+        if (Test-Path -LiteralPath $key) { Remove-Item -LiteralPath $key -Recurse }
     }
-    Write-Host 'Entrée retirée du menu contextuel.'
+    Write-Host 'Context menu entry removed.'
 
-    foreach ($fichier in 'claude-ici.ps1', 'claude-ici.cmd') {
-        $chemin = Join-Path $dossier $fichier
-        if (Test-Path -LiteralPath $chemin) { Remove-Item -LiteralPath $chemin }
+    foreach ($file in 'claude-here.ps1', 'claude-here.cmd') {
+        $filePath = Join-Path $dir $file
+        if (Test-Path -LiteralPath $filePath) { Remove-Item -LiteralPath $filePath }
     }
-    if ((Test-Path -LiteralPath $dossier) -and -not (Get-ChildItem -LiteralPath $dossier -Force)) {
-        Remove-Item -LiteralPath $dossier
+    if ((Test-Path -LiteralPath $dir) -and -not (Get-ChildItem -LiteralPath $dir -Force)) {
+        Remove-Item -LiteralPath $dir
     }
-    if (Test-Path -LiteralPath $DossierSession) { Remove-Item -LiteralPath $DossierSession -Recurse -Force }
-    Write-Host "Fichiers retirés de $dossier et $DossierSession."
+    if (Test-Path -LiteralPath $SessionDir) { Remove-Item -LiteralPath $SessionDir -Recurse -Force }
+    Write-Host "Files removed from $dir and $SessionDir."
 
-    $entrees = (Get-PathUtilisateur) -split ';'
-    if ($entrees | Where-Object { Test-MemeChemin $_ $dossier }) {
-        Set-PathUtilisateur ($entrees | Where-Object { -not (Test-MemeChemin $_ $dossier) })
-        Write-Host 'Dossier retiré du PATH.'
+    $entries = (Get-UserPath) -split ';'
+    if ($entries | Where-Object { Test-SamePath $_ $dir }) {
+        Set-UserPath ($entries | Where-Object { -not (Test-SamePath $_ $dir) })
+        Write-Host 'Folder removed from the PATH.'
     }
 
-    if (Test-Path -LiteralPath $CleInfos) { Remove-Item -LiteralPath $CleInfos -Recurse }
-    Write-Host 'claude-ici est désinstallé.' -ForegroundColor Green
+    if (Test-Path -LiteralPath $InfoKey) { Remove-Item -LiteralPath $InfoKey -Recurse }
+    Write-Host 'claude-here is uninstalled.' -ForegroundColor Green
     return
 }
 
 # ---------------------------------------------------------------------------------------------
-# Installation
+# Install
 # ---------------------------------------------------------------------------------------------
-foreach ($fichier in $Modele, $ModeleSession) {
-    if (-not (Test-Path -LiteralPath $fichier -PathType Leaf)) { throw "Fichier introuvable : $fichier" }
+foreach ($file in $LauncherTemplate, $SessionTemplate) {
+    if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "File not found: $file" }
 }
-$installationPrecedente = Get-ItemProperty -LiteralPath $CleInfos -ErrorAction SilentlyContinue
+$previousInstall = Get-ItemProperty -LiteralPath $InfoKey -ErrorAction SilentlyContinue
 
-# 1. Compte Claude
-if (-not $Compte) {
-    $Compte = Select-Compte $(if ($installationPrecedente) { $installationPrecedente.Compte })
+# 1. Claude account
+if (-not $Account) {
+    $Account = Select-Account $(if ($previousInstall) { $previousInstall.Account })
 }
 try {
-    $sid = ([System.Security.Principal.NTAccount] $Compte).Translate(
+    $sid = ([System.Security.Principal.NTAccount] $Account).Translate(
         [System.Security.Principal.SecurityIdentifier]).Value
 } catch {
-    throw "Compte introuvable : $Compte"
+    throw "Account not found: $Account"
 }
-if ($sid -eq $MonSid) {
-    throw "$Compte est ton propre compte : il faut un compte distinct pour isoler Claude."
+if ($sid -eq $MySid) {
+    throw "$Account is your own account: a separate account is needed to isolate Claude."
 }
-if (Test-Administrateur $sid) {
-    Write-Host "Attention : $Compte est administrateur de la machine, Claude ne sera pas vraiment isolé." -ForegroundColor Yellow
-}
-
-# 2. Lanceur, sous ton compte
-$DossierInstallation = [System.IO.Path]::GetFullPath($DossierInstallation)
-$profil = $env:USERPROFILE.TrimEnd('\') + '\'
-if (-not ($DossierInstallation + '\').StartsWith($profil, [StringComparison]::OrdinalIgnoreCase)) {
-    Write-Host "Attention : $DossierInstallation est hors de ton profil. Vérifie que $Compte ne peut pas y écrire." -ForegroundColor Yellow
+if (Test-Administrator $sid) {
+    Write-Host "Warning: $Account is an administrator of this machine, so Claude will not really be isolated." -ForegroundColor Yellow
 }
 
-$cheminSession = Join-Path $DossierSession 'claude-session.ps1'
-$script = (Get-Content -LiteralPath $Modele -Raw -Encoding UTF8).
-    Replace("'__COMPTE__'", (ConvertTo-LitteralPS $Compte)).
-    Replace("'__SESSION__'", (ConvertTo-LitteralPS $cheminSession))
-
-$cheminScript = Join-Path $DossierInstallation 'claude-ici.ps1'
-$cheminCmd    = Join-Path $DossierInstallation 'claude-ici.cmd'
-$cmd = "@powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"%~dp0claude-ici.ps1`" %*`r`n"
-
-if ($PSCmdlet.ShouldProcess($DossierInstallation, 'Copier claude-ici.ps1 et claude-ici.cmd')) {
-    New-Item -ItemType Directory -Path $DossierInstallation -Force | Out-Null
-    Write-Utf8Bom $cheminScript $script
-    [System.IO.File]::WriteAllText($cheminCmd, $cmd, [System.Text.Encoding]::ASCII)
+# 2. Launcher, run under your account
+$InstallDir = [System.IO.Path]::GetFullPath($InstallDir)
+$userProfile = $env:USERPROFILE.TrimEnd('\') + '\'
+if (-not ($InstallDir + '\').StartsWith($userProfile, [StringComparison]::OrdinalIgnoreCase)) {
+    Write-Host "Warning: $InstallDir is outside your profile. Make sure $Account cannot write to it." -ForegroundColor Yellow
 }
-Write-Host "Lanceur copié dans $DossierInstallation."
 
-# 3. Script de session, sous le compte Claude
-if ($PSCmdlet.ShouldProcess($DossierSession, 'Copier claude-session.ps1')) {
-    if (Test-Path -LiteralPath $DossierSession) {
-        # Un dossier créé par quelqu'un d'autre (le compte Claude, par exemple) n'est pas sûr.
-        $proprietaire = (Get-Acl -LiteralPath $DossierSession).GetOwner(
+$sessionPath = Join-Path $SessionDir 'claude-session.ps1'
+$launcher = (Get-Content -LiteralPath $LauncherTemplate -Raw -Encoding UTF8).
+    Replace("'__ACCOUNT__'", (ConvertTo-PSLiteral $Account)).
+    Replace("'__SESSION__'", (ConvertTo-PSLiteral $sessionPath))
+
+$launcherPath = Join-Path $InstallDir 'claude-here.ps1'
+$cmdPath      = Join-Path $InstallDir 'claude-here.cmd'
+$cmd = "@powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"%~dp0claude-here.ps1`" %*`r`n"
+
+if ($PSCmdlet.ShouldProcess($InstallDir, 'Copy claude-here.ps1 and claude-here.cmd')) {
+    New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
+    Write-Utf8Bom $launcherPath $launcher
+    [System.IO.File]::WriteAllText($cmdPath, $cmd, [System.Text.Encoding]::ASCII)
+}
+Write-Host "Launcher copied to $InstallDir."
+
+# 3. Session script, run under the Claude account
+if ($PSCmdlet.ShouldProcess($SessionDir, 'Copy claude-session.ps1')) {
+    if (Test-Path -LiteralPath $SessionDir) {
+        # A folder created by someone else (the Claude account, for instance) is not safe.
+        $owner = (Get-Acl -LiteralPath $SessionDir).GetOwner(
             [System.Security.Principal.SecurityIdentifier]).Value
-        if ($proprietaire -ne $MonSid) {
-            throw "$DossierSession appartient à un autre compte : supprime-le (en administrateur) puis relance."
+        if ($owner -ne $MySid) {
+            throw "$SessionDir belongs to another account: delete it (as administrator), then run the installer again."
         }
     } else {
-        New-Item -ItemType Directory -Path $DossierSession | Out-Null
+        New-Item -ItemType Directory -Path $SessionDir | Out-Null
     }
-    # Droits explicites, sans héritage : par défaut, tous les utilisateurs peuvent créer des
-    # fichiers dans les sous-dossiers de ProgramData. Ici : lecture seule pour eux.
-    $sortie = & icacls.exe $DossierSession /inheritance:r /grant:r `
-        "*${MonSid}:(OI)(CI)F" '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-32-545:(OI)(CI)RX' 2>&1
-    if ($LASTEXITCODE -ne 0) { throw "Impossible de fixer les droits de $DossierSession : $sortie" }
-    Write-Utf8Bom $cheminSession (Get-Content -LiteralPath $ModeleSession -Raw -Encoding UTF8)
+    # Explicit rights, no inheritance: by default, all users can create files in ProgramData
+    # subfolders. Here: read-only for them.
+    $output = & icacls.exe $SessionDir /inheritance:r /grant:r `
+        "*${MySid}:(OI)(CI)F" '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-32-545:(OI)(CI)RX' 2>&1
+    if ($LASTEXITCODE -ne 0) { throw "Could not set permissions on ${SessionDir}: $output" }
+    Write-Utf8Bom $sessionPath (Get-Content -LiteralPath $SessionTemplate -Raw -Encoding UTF8)
 }
-Write-Host "Script de session copié dans $DossierSession."
+Write-Host "Session script copied to $SessionDir."
 
 # 4. PATH
-$entrees = (Get-PathUtilisateur) -split ';' | Where-Object { $_ }
-if ($entrees | Where-Object { Test-MemeChemin $_ $DossierInstallation }) {
-    Write-Host 'Dossier déjà dans le PATH.'
+$entries = (Get-UserPath) -split ';' | Where-Object { $_ }
+if ($entries | Where-Object { Test-SamePath $_ $InstallDir }) {
+    Write-Host 'Folder already on the PATH.'
 } else {
-    Set-PathUtilisateur (@($entrees) + $DossierInstallation)
-    Write-Host 'Dossier ajouté au PATH (pris en compte dans les nouvelles consoles).'
+    Set-UserPath (@($entries) + $InstallDir)
+    Write-Host 'Folder added to the PATH (effective in new consoles).'
 }
 
-# 5. Menu contextuel
-# "%V." et non "%V" : sur un lecteur, %V vaut "C:\", et le \" final casserait les guillemets.
-# claude-ici.ps1 retire le point avec GetFullPath.
-$Libelle  = "Ouvrir Claude ici ($($Compte -replace '^.*\\', ''))"
-$Commande = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$cheminScript`" `"%V.`""
-if ($PSCmdlet.ShouldProcess('HKCU:\Software\Classes', "Ajouter l'entrée « $Libelle » : $Commande")) {
-    foreach ($cle in $ClesMenu) {
-        New-Item -Path $cle -Force -Value $Libelle | Out-Null
-        New-ItemProperty -LiteralPath $cle -Name 'Icon' -Value 'powershell.exe' -Force | Out-Null
-        New-Item -Path "$cle\command" -Force -Value $Commande | Out-Null
+# 5. Context menu
+# "%V." rather than "%V": on a drive, %V is "C:\", and the trailing \" would break the quoting.
+# claude-here.ps1 strips the dot with GetFullPath.
+$label   = "Open Claude here ($($Account -replace '^.*\\', ''))"
+$command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$launcherPath`" `"%V.`""
+if ($PSCmdlet.ShouldProcess('HKCU:\Software\Classes', "Add the '$label' entry: $command")) {
+    foreach ($key in $MenuKeys) {
+        New-Item -Path $key -Force -Value $label | Out-Null
+        New-ItemProperty -LiteralPath $key -Name 'Icon' -Value 'powershell.exe' -Force | Out-Null
+        New-Item -Path "$key\command" -Force -Value $command | Out-Null
     }
 }
-Write-Host "Entrée « $Libelle » ajoutée au menu contextuel."
+Write-Host "Context menu entry '$label' added."
 
-# Mémorise l'installation (mise à jour et désinstallation)
-if ($PSCmdlet.ShouldProcess($CleInfos, "Mémoriser l'installation")) {
-    New-Item -Path $CleInfos -Force | Out-Null
-    New-ItemProperty -LiteralPath $CleInfos -Name Compte -Value $Compte -Force | Out-Null
-    New-ItemProperty -LiteralPath $CleInfos -Name DossierInstallation -Value $DossierInstallation -Force | Out-Null
+# Remember the installation (updates and uninstall)
+if ($PSCmdlet.ShouldProcess($InfoKey, 'Save installation info')) {
+    New-Item -Path $InfoKey -Force | Out-Null
+    New-ItemProperty -LiteralPath $InfoKey -Name Account -Value $Account -Force | Out-Null
+    New-ItemProperty -LiteralPath $InfoKey -Name InstallDir -Value $InstallDir -Force | Out-Null
 }
 
 Write-Host ''
-Write-Host 'claude-ici est installé.' -ForegroundColor Green
+Write-Host 'claude-here is installed.' -ForegroundColor Green
 if (Test-Windows11) {
-    Write-Host '  - Clic droit sur un dossier, puis « Afficher plus d''options » (ou Maj+clic droit) : « Ouvrir Claude ici ».'
+    Write-Host "  - Right-click a folder, then 'Show more options' (or Shift+right-click): 'Open Claude here'."
 } else {
-    Write-Host '  - Clic droit sur un dossier : « Ouvrir Claude ici ».'
+    Write-Host "  - Right-click a folder: 'Open Claude here'."
 }
-Write-Host '  - Dans une nouvelle console : claude-ici [dossier]'
-Write-Host "Windows Terminal et Claude Code doivent être installés dans le compte $Compte."
+Write-Host '  - In a new console: claude-here [folder]'
+Write-Host "Windows Terminal and Claude Code must be installed under the $Account account."

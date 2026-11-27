@@ -1,49 +1,76 @@
-# claude-ici
+# claude-here
 
-Lance Claude Code sous un compte Windows dédié, isolé de ton compte, dans le dossier de ton choix :
-par clic droit dans l'Explorateur (« Ouvrir Claude ici ») ou avec la commande `claude-ici`.
+Runs Claude Code under a dedicated Windows account, isolated from yours, in the folder of your
+choice: from a right-click in File Explorer ("Open Claude here") or with the `claude-here` command.
 
-## Prérequis
+## Why
 
-- Un compte local dédié à Claude, non administrateur, auquel on s'est connecté au moins une fois.
-- Dans ce compte : Windows Terminal et Claude Code.
+Claude Code can read files and run commands with the rights of the account it runs under. Running
+it under a separate, non-administrator local account keeps it away from your profile, your
+documents and your credentials: it only sees the folders you explicitly share with that account.
 
-## Installation
+`claude-here` removes the friction of doing this by hand: one right-click, one password prompt,
+and Claude Code opens in Windows Terminal, in the right folder, under the right account.
 
-Double-clic sur `installer.cmd`, depuis **ton** compte (pas besoin d'être administrateur).
-L'installeur liste les comptes locaux et te demande celui sous lequel lancer Claude, puis :
+## How it works
 
-- copie le lanceur (`claude-ici.ps1` renseigné et `claude-ici.cmd`) dans
-  `%LOCALAPPDATA%\Programs\ClaudeIci`, et ajoute ce dossier à ton PATH ;
-- copie `claude-session.ps1` dans `C:\ProgramData\ClaudeIci`, lisible par le compte Claude mais
-  pas modifiable par lui ;
-- crée l'entrée du menu contextuel. Sous Windows 11, elle est dans « Afficher plus d'options »
-  (ou Maj+clic droit).
+```
+your account                              Claude account
+------------                              --------------
+Explorer / claude-here
+  -> claude-here.ps1  -- runas -->  claude-session.ps1
+     (checks the folder)               (checks Windows Terminal and Claude Code)
+                                        -> Windows Terminal -> claude.exe
+```
 
-Relancer l'installeur met l'installation à jour.
+- `claude-here.ps1` runs under **your** account. It lives in your profile, where the Claude account
+  cannot write, so Claude cannot tamper with a script you run.
+- `claude-session.ps1` runs under the **Claude** account. It lives in `C:\ProgramData\ClaudeHere`,
+  with permissions that let the Claude account read it but not modify it.
+- Everything is installed per user: no administrator rights, no system-wide changes.
 
-## Utilisation
+## Requirements
 
-- Clic droit sur un dossier, dans le vide d'un dossier ou sur un lecteur : « Ouvrir Claude ici ».
-- Dans une console : `claude-ici [dossier]` (dossier courant par défaut).
+- A local account dedicated to Claude, not an administrator, that has been signed in to at least once.
+- Under that account: Windows Terminal and Claude Code.
 
-Le mot de passe du compte Claude est demandé à chaque lancement (`runas`). Le dossier doit être
-accessible à ce compte : pas dans ton profil.
+## Install
 
-Windows Terminal et Claude Code doivent être installés dans le compte Claude : `claude-ici` les
-cherche dans le PATH de ce compte, puis dans `%USERPROFILE%\Tools\WindowsTerminal` et
-`%USERPROFILE%\.local\bin`, et indique celui qui manque.
+Double-click `installer.cmd`, from **your** account (no administrator rights needed).
+The installer lists the local accounts and asks which one to run Claude under, then:
 
-## Désinstallation
+- copies the launcher (filled-in `claude-here.ps1` and `claude-here.cmd`) to
+  `%LOCALAPPDATA%\Programs\ClaudeHere`, and adds that folder to your PATH;
+- copies `claude-session.ps1` to `C:\ProgramData\ClaudeHere`, readable by the Claude account but
+  not modifiable by it;
+- adds the context menu entry. On Windows 11, it is under "Show more options"
+  (or Shift+right-click).
+
+Running the installer again updates the installation.
+
+## Usage
+
+- Right-click a folder, the empty space inside a folder, or a drive: "Open Claude here".
+- In a console: `claude-here [folder]` (current folder by default).
+
+The Claude account's password is asked for on each launch (`runas`). The folder must be
+accessible to that account: not inside your profile.
+
+Windows Terminal and Claude Code must be installed under the Claude account: `claude-here` looks
+for them on that account's PATH, then in `%USERPROFILE%\Tools\WindowsTerminal` and
+`%USERPROFILE%\.local\bin`, and tells you which one is missing.
+
+## Uninstall
 
 ```powershell
-.\installer.cmd -Desinstaller
+.\installer.cmd -Uninstall
 ```
-## Fichiers
 
-| Fichier              | Rôle                                                                     |
-| -------------------- | ------------------------------------------------------------------------ |
-| `installer.cmd`      | Lance `installer.ps1` (double-clic).                                     |
-| `installer.ps1`      | Installe, met à jour ou désinstalle.                                     |
-| `claude-ici.ps1`     | Modèle du lanceur (ton compte) : l'installeur y écrit le compte Claude.  |
-| `claude-session.ps1` | Tourne sous le compte Claude : vérifie les prérequis, puis lance Claude.  |
+## Files
+
+| File                 | Purpose                                                                 |
+| -------------------- | ----------------------------------------------------------------------- |
+| `installer.cmd`      | Runs `installer.ps1` (double-click).                                    |
+| `installer.ps1`      | Installs, updates or uninstalls.                                        |
+| `claude-here.ps1`    | Launcher template (your account): the installer fills in the account.   |
+| `claude-session.ps1` | Runs under the Claude account: checks requirements, then starts Claude. |

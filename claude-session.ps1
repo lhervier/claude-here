@@ -1,65 +1,65 @@
 ﻿<#
 .SYNOPSIS
-    Lance Claude Code dans Windows Terminal. S'exécute SOUS LE COMPTE CLAUDE (via runas).
+    Starts Claude Code in Windows Terminal. Runs UNDER THE CLAUDE ACCOUNT (through runas).
 
 .DESCRIPTION
-    Appelé par claude-ici.ps1. Vérifie que Windows Terminal et claude.exe sont installés dans le
-    compte courant (sinon, l'indique et s'arrête), puis ouvre Windows Terminal dans le dossier
-    demandé avec Claude Code.
+    Called by claude-here.ps1. Checks that Windows Terminal and claude.exe are installed for the
+    current account (otherwise reports it and stops), then opens Windows Terminal in the
+    requested folder with Claude Code.
 
-    installer.ps1 le copie dans C:\ProgramData\ClaudeIci : le compte Claude peut le lire,
-    mais pas le modifier.
+    installer.ps1 copies it to C:\ProgramData\ClaudeHere: the Claude account can read it but
+    cannot modify it.
 
-.PARAMETER Dossier
-    Dossier de démarrage.
+.PARAMETER Path
+    Starting folder.
 #>
 param(
     [Parameter(Mandatory, Position = 0)]
-    [string] $Dossier
+    [string] $Path
 )
 
 $ErrorActionPreference = 'Stop'
 
-function Stop-AvecErreur([string] $Message) {
+function Stop-WithError([string] $Message) {
     Write-Host $Message -ForegroundColor Red
-    Read-Host 'Entrée pour fermer'
+    Read-Host 'Press Enter to close'
     exit 1
 }
 
-# Cherche d'abord dans le PATH, puis aux emplacements habituels.
-function Find-Executable([string] $Commande, [string[]] $Chemins) {
-    $trouve = Get-Command $Commande -CommandType Application -ErrorAction SilentlyContinue |
+# Looks in the PATH first, then in the usual locations.
+function Find-Executable([string] $Command, [string[]] $Locations) {
+    $found = Get-Command $Command -CommandType Application -ErrorAction SilentlyContinue |
         Select-Object -First 1
-    if ($trouve) { return $trouve.Source }
-    foreach ($chemin in $Chemins) {
-        if (Test-Path -LiteralPath $chemin -PathType Leaf) { return $chemin }
+    if ($found) { return $found.Source }
+    foreach ($location in $Locations) {
+        if (Test-Path -LiteralPath $location -PathType Leaf) { return $location }
     }
     return $null
 }
 
-$cheminsTerminal = @(Join-Path $env:USERPROFILE 'Tools\WindowsTerminal\WindowsTerminal.exe')
-$cheminsClaude   = @(Join-Path $env:USERPROFILE '.local\bin\claude.exe')
+$terminalLocations = @(Join-Path $env:USERPROFILE 'Tools\WindowsTerminal\WindowsTerminal.exe')
+$claudeLocations   = @(Join-Path $env:USERPROFILE '.local\bin\claude.exe')
 
-$terminal = Find-Executable 'wt.exe' $cheminsTerminal
-$claude   = Find-Executable 'claude.exe' $cheminsClaude
+$terminal = Find-Executable 'wt.exe' $terminalLocations
+$claude   = Find-Executable 'claude.exe' $claudeLocations
 
-$manquants = @()
+$missing = @()
 if (-not $terminal) {
-    $manquants += "  - Windows Terminal : ni wt.exe dans le PATH, ni $($cheminsTerminal -join ', ')"
+    $missing += "  - Windows Terminal: no wt.exe on the PATH, nor $($terminalLocations -join ', ')"
 }
 if (-not $claude) {
-    $manquants += "  - Claude Code : ni claude.exe dans le PATH, ni $($cheminsClaude -join ', ')"
+    $missing += "  - Claude Code: no claude.exe on the PATH, nor $($claudeLocations -join ', ')"
 }
-if ($manquants) {
-    Stop-AvecErreur ("Introuvable(s) pour le compte $env:USERNAME :`n" + ($manquants -join "`n") +
-        "`nInstalle-les sous ce compte, puis relance.")
-}
-
-$Dossier = [System.IO.Path]::GetFullPath($Dossier)
-if (-not (Test-Path -LiteralPath $Dossier -PathType Container)) {
-    Stop-AvecErreur "Dossier inaccessible pour $env:USERNAME : $Dossier"
+if ($missing) {
+    Stop-WithError ("Not found for account ${env:USERNAME}:`n" + ($missing -join "`n") +
+        "`nInstall them under this account, then try again.")
 }
 
-# Même piège qu'à l'appel : "C:\" ferait lire \" comme un guillemet échappé.
-if ($Dossier.EndsWith('\')) { $Dossier += '.' }
-Start-Process -FilePath $terminal -ArgumentList "-d `"$Dossier`" `"$claude`""
+$Path = [System.IO.Path]::GetFullPath($Path)
+if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
+    Stop-WithError "Folder not accessible to ${env:USERNAME}: $Path"
+}
+
+# Same pitfall as in the caller: "C:\" would make \" read as an escaped quote.
+if ($Path.EndsWith('\')) { $Path += '.' }
+Start-Process -FilePath $terminal -ArgumentList "-d `"$Path`" `"$claude`""
